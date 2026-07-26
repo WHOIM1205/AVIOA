@@ -9,7 +9,7 @@ See [`DECISIONS.md`](./DECISIONS.md) for the architecture and the reasoning behi
 
 ## Tech stack
 
-React + Redux Toolkit · FastAPI · LangGraph · Groq `gemma2-9b-it` · PostgreSQL
+React + Redux Toolkit · FastAPI · LangGraph · Groq LLM • PostgreSQL
 
 ## Project layout
 
