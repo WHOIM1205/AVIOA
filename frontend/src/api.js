@@ -26,6 +26,17 @@ export async function uploadDocument(file, currentForm) {
   return res.json()
 }
 
+// Check the current form against saved complaints before saving (Bonus Feature 5).
+export async function checkDuplicate(form) {
+  const res = await fetch(`${BASE}/complaints/check-duplicate`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(form),
+  })
+  if (!res.ok) throw new Error('Duplicate check failed')
+  return res.json()
+}
+
 // Persist the current complaint (the "Save Complaint" button).
 export async function saveComplaint(form) {
   const res = await fetch(`${BASE}/complaints`, {

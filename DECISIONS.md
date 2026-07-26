@@ -74,6 +74,32 @@ and feed it in as the `message`. One code path for both entry points.
   calls live in `api.js`; components fetch then dispatch plain actions (no thunks needed).
   The form is display-only — it changes ONLY via the copilot's response, exactly as demoed.
 
+## Bonus features (additive — no existing feature changed)
+
+- **B1 — Completeness Checker** — pure-Python `completeness.py` (`compute_completeness`, field
+  list taken from `ComplaintBase` so there's one source of truth). New graph node
+  `completeness` inserted `merge → completeness → assess_risk` (no LLM). `ChatResponse` gains an
+  additive `completeness: {fields, score}`. Frontend: `CompletenessCard` on the right panel,
+  hidden at score 0. Verified: all prior regression tests still pass unchanged.
+- **B2 — Deterministic Risk Confidence** — the risk LLM prompt is UNCHANGED. `_risk_confidence`
+  (weights over risk-signal fields, sum 100) computes a 0-100 confidence in pure Python; it's
+  appended to the `risk` object inside `assess_risk_node` only when risk is non-empty. No schema
+  change (`risk` is a dict). Frontend shows a "Confidence: N%" line in the existing risk card.
+- **B3 — Duplicate Detection** — `duplicate.py` (`find_duplicates`, deterministic, `difflib`
+  fuzzy match, weights sum 100: batch 40 / product 25 / customer 20 / type 15, threshold 60).
+  New read-only endpoint `POST /complaints/check-duplicate` queries PostgreSQL and compares —
+  no embeddings, no vector DB, no LLM. Frontend: Save first checks; if matches, `DuplicateCard`
+  warns and the button becomes "Save anyway" (warn but never block). New Redux `duplicates`
+  state + `setDuplicates`/`clearDuplicates`; cleared on form change and after save.
+- **B4 — Summary + Root Cause + CAPA** — ONE shared `advise` node (last in the graph) produces
+  all three in a single LLM call. Runs ONLY when `patch` is non-empty (skips on unrelated chat,
+  errors, empty form). When skipped it emits no advisory keys; `run_agent` returns them as
+  `null`; the frontend reducer only overwrites on non-null, so previous cards are PRESERVED (no
+  flicker, no lost analysis). `ChatResponse` gains additive nullable `summary`/`root_causes`/
+  `capa`. Frontend: `SummaryCard` + `AdvisoryCard` on the right panel.
+
+All six bonus features complete; every prior regression test still passes unchanged.
+
 ## Model note (important for the interview)
 
 The assignment mandates Groq **`gemma2-9b-it`**, but Groq has **decommissioned** it

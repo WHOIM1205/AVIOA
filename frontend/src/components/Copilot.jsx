@@ -3,6 +3,9 @@ import { useSelector, useDispatch } from 'react-redux'
 import { applyChatResult } from '../features/complaintSlice'
 import { addMessage, setLoading } from '../features/chatSlice'
 import { sendChat, uploadDocument } from '../api'
+import CompletenessCard from './CompletenessCard'
+import SummaryCard from './SummaryCard'
+import AdvisoryCard from './AdvisoryCard'
 
 // Colour the severity/priority badge by level.
 const LEVEL_CLASS = {
@@ -26,7 +29,14 @@ export default function Copilot() {
     dispatch(setLoading(true))
     try {
       const data = await work
-      dispatch(applyChatResult({ form: data.form, risk: data.risk }))
+      dispatch(applyChatResult({
+        form: data.form,
+        completeness: data.completeness,
+        risk: data.risk,
+        summary: data.summary,
+        root_causes: data.root_causes,
+        capa: data.capa,
+      }))
       dispatch(addMessage({ role: 'assistant', text: data.reply }))
     } catch (e) {
       dispatch(addMessage({ role: 'assistant', text: 'Error: ' + e.message }))
@@ -76,9 +86,18 @@ export default function Copilot() {
               Priority: {risk.priority}
             </span>
           </div>
+          {risk.confidence != null && (
+            <div className="risk-confidence">
+              Confidence: <strong>{risk.confidence}%</strong>
+            </div>
+          )}
           <p className="risk-rationale">{risk.rationale}</p>
         </div>
       )}
+
+      <CompletenessCard />
+      <SummaryCard />
+      <AdvisoryCard />
 
       <div className="chat-log">
         {messages.length === 0 && (

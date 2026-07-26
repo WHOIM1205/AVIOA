@@ -1,7 +1,8 @@
-import { useState } from 'react'
+import { useState, useEffect } from 'react'
 import { useSelector, useDispatch } from 'react-redux'
-import { resetComplaint } from '../features/complaintSlice'
-import { saveComplaint } from '../api'
+import { resetComplaint, setDuplicates, clearDuplicates } from '../features/complaintSlice'
+import { saveComplaint, checkDuplicate } from '../api'
+import DuplicateCard from './DuplicateCard'
 
 // The four sections mirror the reference UI. Each field is [key, label, isFullWidth].
 const SECTIONS = [
@@ -34,17 +35,46 @@ export default function ComplaintForm() {
   const form = useSelector((s) => s.complaint.form)
   const dispatch = useDispatch()
   const [saveMsg, setSaveMsg] = useState('')
+  const [confirming, setConfirming] = useState(false)
 
   const isEmpty = Object.keys(form).length === 0
 
-  async function handleSave() {
+  // Whenever the complaint changes, drop any stale duplicate warning so the next
+  // Save re-checks against the current form.
+  useEffect(() => {
+    setConfirming(false)
+    dispatch(clearDuplicates())
+  }, [form, dispatch])
+
+  async function persist() {
     setSaveMsg('Saving…')
     try {
       const saved = await saveComplaint(form)
       setSaveMsg(`Saved as complaint #${saved.id} (status: ${saved.status}).`)
+      setConfirming(false)
+      dispatch(clearDuplicates())
     } catch {
       setSaveMsg('Save failed — is the backend running?')
     }
+  }
+
+  async function handleSave() {
+    // Second click ("Save anyway") after a warning: just save.
+    if (confirming) return persist()
+    // First click: check for duplicates. Warn (but never block) if any are found.
+    setSaveMsg('Checking for duplicates…')
+    try {
+      const { duplicates } = await checkDuplicate(form)
+      if (duplicates.length > 0) {
+        dispatch(setDuplicates(duplicates))
+        setConfirming(true)
+        setSaveMsg('Potential duplicate found — review below, then Save anyway to confirm.')
+        return
+      }
+    } catch {
+      // If the check fails, don't block saving — fall through to persist.
+    }
+    persist()
   }
 
   return (
@@ -76,15 +106,16 @@ export default function ComplaintForm() {
       <div className="form-actions">
         <button
           className="btn ghost"
-          onClick={() => { dispatch(resetComplaint()); setSaveMsg('') }}
+          onClick={() => { dispatch(resetComplaint()); setSaveMsg(''); setConfirming(false) }}
         >
           Reset Form
         </button>
         <button className="btn primary" onClick={handleSave} disabled={isEmpty}>
-          Save Complaint
+          {confirming ? 'Save anyway' : 'Save Complaint'}
         </button>
       </div>
       {saveMsg && <div className="save-msg">{saveMsg}</div>}
+      <DuplicateCard />
     </section>
   )
 }
