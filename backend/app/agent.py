@@ -24,6 +24,7 @@ from typing import TypedDict
 from langchain_groq import ChatGroq
 from langgraph.graph import StateGraph, START, END
 
+from .completeness import compute_completeness
 from .config import GROQ_API_KEY, GROQ_MODEL
 
 # The 13 form fields the AI is allowed to fill. Anything outside this list is dropped.
@@ -71,6 +72,20 @@ Return ONLY a JSON object with exactly these three keys:
 - rationale: one or two sentences justifying the rating, grounded in the complaint.
 
 Base the assessment only on the complaint provided. Do not repeat the complaint fields.
+Output only the JSON object, nothing else."""
+
+
+# Prompt for the shared advisory node (Bonus Features 2, 3, 4). ONE LLM call produces
+# the summary, probable root causes, and recommended CAPA together.
+ADVISE_SYSTEM_PROMPT = """You are a pharmaceutical QMS assistant. Given a customer complaint as JSON,
+produce a brief analysis.
+
+Return ONLY a JSON object with exactly these keys:
+- summary: a 1-2 sentence professional summary of the complaint.
+- root_causes: a list of 3-5 short probable root causes (each just a few words).
+- capa: a list of 3-5 short recommended corrective/preventive actions (each just a few words).
+
+Base everything only on the complaint provided. Keep every entry concise.
 Output only the JSON object, nothing else."""
 
 
@@ -127,12 +142,49 @@ def _validate_risk(raw: dict) -> dict:
     }
 
 
+# Deterministic confidence in the risk classification (Bonus Feature 6): how much
+# risk-relevant signal the complaint carries. Pure Python — NO LLM. Weights sum to 100,
+# so a fully-specified complaint scores 100% and each missing signal lowers it.
+RISK_SIGNAL_WEIGHTS = {
+    "complaint_type": 25,        # the core of the classification
+    "detailed_description": 25,  # the evidence
+    "product_name": 15,          # what is affected
+    "quantity_affected": 15,     # scale of impact
+    "batch_lot_number": 10,      # traceability
+    "initial_severity": 10,      # stated severity
+}
+
+
+def _risk_confidence(form: dict) -> int:
+    """Confidence (0-100) = sum of weights of the risk-signal fields that are present."""
+    return sum(weight for field, weight in RISK_SIGNAL_WEIGHTS.items() if form.get(field))
+
+
+def _validate_advice(raw: dict) -> dict:
+    """Keep summary (str) and root_causes/capa (lists of non-empty strings). Drop the rest."""
+    out = {}
+    summary = raw.get("summary")
+    if isinstance(summary, str) and summary.strip():
+        out["summary"] = summary.strip()
+    for key in ("root_causes", "capa"):
+        value = raw.get(key)
+        if isinstance(value, list):
+            items = [str(x).strip() for x in value if str(x).strip()]
+            if items:
+                out[key] = items
+    return out
+
+
 class ChatState(TypedDict, total=False):
     message: str        # what the user typed (or the text pulled from a document)
     current_form: dict  # the form as it stands before this turn
     patch: dict         # fields the extractor found in `message`
     form: dict          # current_form + patch (the new full form)
+    completeness: dict  # deterministic completeness check of `form` (Bonus Feature 1)
     risk: dict          # independent risk assessment of `form` (never merged into it)
+    summary: str        # advisory: professional summary (Bonus Feature 2)
+    root_causes: list   # advisory: probable root causes (Bonus Feature 3)
+    capa: list          # advisory: recommended corrective actions (Bonus Feature 4)
     reply: str          # short message shown back in the chat
     error: str          # set if the LLM call or JSON parsing failed
 
@@ -178,6 +230,14 @@ def merge_node(state: ChatState) -> dict:
     return {"form": merged, "reply": reply}
 
 
+def completeness_node(state: ChatState) -> dict:
+    """
+    Pure-Python step (Bonus Feature 1): how complete is the merged form? No LLM call.
+    Reads the form and returns a SEPARATE completeness object; it never touches the form.
+    """
+    return {"completeness": compute_completeness(state.get("form", {}))}
+
+
 def assess_risk_node(state: ChatState) -> dict:
     """
     Reads the merged form and returns a SEPARATE risk object. It returns only the
@@ -199,18 +259,56 @@ def assess_risk_node(state: ChatState) -> dict:
     raw = _parse_json(resp.content)
     if raw is None:
         return {"risk": {}}
-    return {"risk": _validate_risk(raw)}
+    # LLM produces severity/priority/rationale; confidence is added deterministically.
+    risk = _validate_risk(raw)
+    if risk:
+        risk["confidence"] = _risk_confidence(form)
+    return {"risk": risk}
+
+
+def advise_node(state: ChatState) -> dict:
+    """
+    Shared advisory node (Bonus Features 2, 3, 4): ONE LLM call producing summary,
+    root causes, and CAPA together.
+
+    Runs ONLY when this turn actually changed a field (patch is non-empty). When it
+    is skipped — no patch, an error, or an empty form — it returns {} so NO advisory
+    keys are emitted. The frontend treats absent advisory as "keep the previous cards",
+    which avoids flicker and losing analysis during unrelated chat messages.
+    """
+    if state.get("error"):
+        return {}
+    if not state.get("patch"):        # nothing changed this turn -> preserve previous
+        return {}
+    form = state.get("form", {})
+    if not form:
+        return {}
+    try:
+        resp = _get_llm().invoke(
+            [("system", ADVISE_SYSTEM_PROMPT), ("human", json.dumps(form))]
+        )
+    except Exception:
+        # On failure, preserve the previous advisory rather than blanking the cards.
+        return {}
+    raw = _parse_json(resp.content)
+    if raw is None:
+        return {}
+    return _validate_advice(raw)
 
 
 def _build_agent():
     graph = StateGraph(ChatState)
     graph.add_node("extract", extract_node)
     graph.add_node("merge", merge_node)
+    graph.add_node("completeness", completeness_node)
     graph.add_node("assess_risk", assess_risk_node)
+    graph.add_node("advise", advise_node)
     graph.add_edge(START, "extract")
     graph.add_edge("extract", "merge")
-    graph.add_edge("merge", "assess_risk")
-    graph.add_edge("assess_risk", END)
+    graph.add_edge("merge", "completeness")
+    graph.add_edge("completeness", "assess_risk")
+    graph.add_edge("assess_risk", "advise")
+    graph.add_edge("advise", END)
     return graph.compile()
 
 
@@ -224,6 +322,11 @@ def run_agent(message: str, current_form: dict | None = None) -> dict:
     return {
         "patch": result["patch"],
         "form": result["form"],
+        "completeness": result.get("completeness", {}),
         "risk": result.get("risk", {}),
+        # Advisory: None when the node was skipped -> frontend preserves previous cards.
+        "summary": result.get("summary"),
+        "root_causes": result.get("root_causes"),
+        "capa": result.get("capa"),
         "reply": result["reply"],
     }

@@ -15,6 +15,7 @@ from . import models, schemas
 from .agent import run_agent
 from .database import Base, engine, get_db
 from .document import extract_text
+from .duplicate import find_duplicates
 
 # Create the `complaints` table if it doesn't exist yet. Simple and enough for
 # this assignment — no migration tool (Alembic) needed for a single-table schema.
@@ -52,6 +53,26 @@ def create_complaint(payload: schemas.ComplaintCreate, db: Session = Depends(get
 def list_complaints(db: Session = Depends(get_db)):
     """Return all saved complaints, newest first."""
     return db.query(models.Complaint).order_by(models.Complaint.created_at.desc()).all()
+
+
+@app.post("/complaints/check-duplicate", response_model=schemas.DuplicateCheckResponse)
+def check_duplicate(payload: schemas.ComplaintCreate, db: Session = Depends(get_db)):
+    """
+    Bonus Feature 5: before saving, compare the current complaint against previously
+    saved ones (deterministic, PostgreSQL lookup only). Read-only — it never writes.
+    """
+    rows = db.query(models.Complaint).all()
+    existing = [
+        {
+            "id": c.id,
+            "customer_name": c.customer_name,
+            "product_name": c.product_name,
+            "batch_lot_number": c.batch_lot_number,
+            "complaint_type": c.complaint_type,
+        }
+        for c in rows
+    ]
+    return {"duplicates": find_duplicates(payload.model_dump(), existing)}
 
 
 @app.post("/chat", response_model=schemas.ChatResponse)

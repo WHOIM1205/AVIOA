@@ -55,7 +55,24 @@ class ChatRequest(BaseModel):
 
 class ChatResponse(BaseModel):
     """What the copilot returns for one turn."""
-    patch: dict          # only the fields that changed this turn
-    form: dict           # the full form after merging (frontend replaces its form with this)
-    risk: dict = {}      # independent risk assessment (severity/priority/rationale); never the form
-    reply: str           # short assistant message for the chat log
+    patch: dict              # only the fields that changed this turn
+    form: dict               # the full form after merging (frontend replaces its form with this)
+    completeness: dict = {}  # deterministic completeness check (Bonus Feature 1)
+    risk: dict = {}          # independent risk assessment (severity/priority/rationale); never the form
+    # Advisory (Bonus Features 2/3/4). None = not generated this turn -> preserve previous.
+    summary: Optional[str] = None
+    root_causes: Optional[list[str]] = None
+    capa: Optional[list[str]] = None
+    reply: str               # short assistant message for the chat log
+
+
+# ---- Duplicate detection (Bonus Feature 5) ----
+
+class DuplicateMatch(BaseModel):
+    id: int
+    similarity: int              # 0-100
+    matched_fields: list[str]    # which fields strongly matched
+
+
+class DuplicateCheckResponse(BaseModel):
+    duplicates: list[DuplicateMatch]
