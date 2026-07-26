@@ -1,0 +1,16 @@
+Customer Complaint - Received via Distributor Portal
+
+Customer: Wellness Pharma Distributors Pvt Ltd
+Date of Complaint: 18 June 2026
+
+Product: Metformin Hydrochloride Tablets
+Strength: 850 mg
+Batch/Lot Number: MET85-2291
+Manufacturing Date: 05 January 2025
+Expiry Date: 04 January 2027
+Quantity Affected: approximately 120 tablets (6 strips)
+
+Complaint Type: Broken / crumbled tablets
+Description: On opening several blister strips, multiple tablets were found broken
+and powdered. The customer suspects a compression or packaging issue during
+manufacturing. They request an investigation and replacement stock.

@@ -1,0 +1,20 @@
+# Runs PostgreSQL in a container so nobody has to install Postgres on their machine.
+# Start it with:  docker compose up -d
+# Stop it with:   docker compose down   (add -v to also wipe the data volume)
+services:
+  db:
+    image: postgres:16
+    container_name: aivoa-postgres
+    environment:
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: postgres
+      POSTGRES_DB: aivoa
+    ports:
+      # host:container — we publish on 5433 to avoid clashing with any Postgres
+      # already using the host's default 5432. Inside the container it's still 5432.
+      - "5433:5432"          # matches DATABASE_URL in backend/.env
+    volumes:
+      - pgdata:/var/lib/postgresql/data   # data survives container restarts
+
+volumes:
+  pgdata:

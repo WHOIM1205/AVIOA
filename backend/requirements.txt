@@ -1,0 +1,16 @@
+# --- Web framework (Phase 0+) ---
+fastapi                 # the API framework
+uvicorn[standard]       # ASGI server that runs FastAPI
+python-dotenv           # loads backend/.env into environment variables
+python-multipart        # lets FastAPI receive uploaded files (Phase 4)
+
+# --- Database (Phase 1) ---
+sqlalchemy              # ORM: define the complaint table as a Python class
+psycopg2-binary         # PostgreSQL driver SQLAlchemy talks through
+
+# --- AI agent (Phase 2+) ---
+langgraph               # builds the multi-step agent as an explicit graph
+langchain-groq          # calls the Groq gemma2-9b-it model
+
+# --- Document text extraction (Phase 4, NOT production OCR) ---
+pypdf                   # pull raw text out of uploaded PDFs
