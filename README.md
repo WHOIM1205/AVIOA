@@ -5,6 +5,18 @@ Two-panel complaint intake tool for pharma QMS (API & FDF). The left panel is a
 structured complaint data from pasted text or uploaded documents, auto-populates the
 form, produces a risk assessment, and lets the user refine any field through chat.
 
+
+## Features
+
+- AI complaint extraction from free text
+- AI powered complaint editing through chat
+- PDF TXT and EML document upload
+- AI risk assessment
+- PostgreSQL complaint persistence
+- FastAPI backend with LangGraph
+- Redux based frontend state management
+
+
 See [`DECISIONS.md`](./DECISIONS.md) for the architecture and the reasoning behind it.
 
 ## Tech stack
